@@ -1,0 +1,507 @@
+---
+title: "Cuentas de emisiones a la atmósfera"
+output: html_notebook
+---
+
+```{r message=FALSE, warning=FALSE}
+if (!"gghighlight" %in% installed.packages()) {install.packages("gghighlight")} # Para resaltar líneas
+if (!"viridis" %in% installed.packages()) {install.packages('viridis')}     # Paleta colores
+if (!"ggthemes" %in% installed.packages()) {install.packages('ggthemes')}    # Temas
+if (!"mapSpain" %in% installed.packages()) {install.packages('mapSpain')}    # Mapas de España
+if (!"tmap" %in% installed.packages()) {install.packages('tmap') }       # Dibujar mapas
+if (!"cartography" %in% installed.packages()) {install.packages('cartography')} # Dibujar mapas
+if (!"cartography" %in% installed.packages()) {install.packages('cartography')} # Dibujar mapas
+```
+
+```{r message=FALSE, warning=FALSE}
+# Librerías que podéis necesitar
+library(tidyverse)
+library(lubridate)   # Manejo de fechas
+library(scales)      # Fomatar fechas
+library(gghighlight) # Para resaltar líneas
+library(viridis)     # Paleta colores
+library(ggthemes)    # Temas
+library(sf)          # Manejo objetos sf
+library(mapSpain)    # Mapas de España
+library(tmap)        # Dibujar mapas
+library(cartography) # Dibujar mapas
+library(treemap)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Librerías necesarias
+if (!"tidyverse" %in% installed.packages()) {install.packages("tidyverse")}
+library(tidyverse) #suit completa
+if (!"scales" %in% installed.packages()) {install.packages("scales")}
+library(scales) #para formato de las escalas
+if (!"ggrepel" %in% installed.packages()) {install.packages("ggrepel")}
+library(ggrepel)   # para etiquetas
+if (!"gghighlight" %in% installed.packages()) {install.packages("gghighlight")}
+library(gghighlight) #para resaltar líneas
+if (!"gganimate" %in% installed.packages()) {install.packages("gganimate")}
+library(gganimate)
+if (!"RColorBrewer" %in% installed.packages()) {install.packages("RColorBrewer")}
+library(RColorBrewer) #para color
+if (!"viridis" %in% installed.packages()) {install.packages("viridis")}
+library(viridis)
+if (!"gifski" %in% installed.packages()) {install.packages("gifski")}
+library(gifski)
+```
+
+```{r}
+theme_a <- function(base_size = 9,
+                    base_family = "sans"
+                           )
+    {
+ 
+    tema <-
+        theme_bw(base_size=base_size) +
+          
+        theme(legend.position="right") +
+        theme(legend.text = element_text(size=base_size+2,family = base_family)) +
+        theme(plot.title=element_text(size=base_size+4, 
+                                      vjust=1.25, 
+                                      family=base_family, 
+                                      hjust = 0.5
+                                      )) +
+        
+        theme(plot.subtitle=element_text(size=base_size+2, family = base_family,  hjust = 0.5))  +
+        theme(text = element_text(size=base_size+2,family = base_family)) +
+        theme(axis.text.x=element_text(size=base_size+2,family = base_family)) +
+        theme(axis.text.y=element_text(size=base_size+2, family = base_family)) +
+          
+        theme(axis.title.x=element_text(size=base_size+2, vjust=0, family = base_family)) +
+        theme(axis.title.y=element_text(size=base_size+2, vjust=1.25, family = base_family)) +
+        theme(plot.caption=element_text(size=base_size-1, family = base_family)) +
+        theme(strip.text = element_text(size=base_size+1, family = base_family)) +
+        theme(strip.text.x = element_text(size=base_size+1, family = base_family)) +
+        theme(strip.text.y = element_text(size=base_size+1, family = base_family)) 
+ 
+    return (tema)
+}
+```
+
+```{r}
+df <- read_csv2("https://www.ine.es/jaxi/files/tpx/es/csv_bdsc/29252.csv?nocab=", 
+                col_types = cols('Sustancias contaminantes' = col_character(),
+                                 'Ramas de actividad (CNAE 2009)' = col_character(),
+                                 'periodo' = col_character(),
+                                 'Total' = col_number()),
+                locale = locale(decimal_mark = ",", grouping_mark = ".")
+                )
+```
+
+```{r}
+df$periodo = gsub("\\s*\\([^\\)]+\\)","",as.character(df$periodo))
+df$periodo = as.Date(as.character(df$periodo), format = "%Y")
+df = df[!(is.na(df$Total) | df$Total==""), ]
+```
+
+```{r}
+df = df %>% 
+  rename(
+    sustancia = 'Sustancias contaminantes',
+    actividad = 'Ramas de actividad (CNAE 2009)' ,
+    total = Total,
+    año = periodo
+    )
+```
+
+Dataframe que describe la cantidad de sustancias contaminantes que se producen en distintas actividades a lo largo de los años.
+```{r}
+head(df)
+```
+Dado que varias sustancias están en distintas unidades creo otro dataframe donde todas las sustancias estarán en la misma unidad.
+```{r}
+df_units <- df
+df_units[df_units$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)',]$total = df_units[df_units$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)',]$total * 1000
+df_units[df_units$sustancia == 'PFC - Perfluorocarbonos o compuestos polifluorcarbonados (miles de toneladas de CO2 equivalente)',]$total = df_units[df_units$sustancia == 'PFC - Perfluorocarbonos o compuestos polifluorcarbonados (miles de toneladas de CO2 equivalente)',]$total * 1000
+
+df_units[df_units$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)',]$total = df[df$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)',]$total * 1000
+df_units[df_units$sustancia == 'HFC - Hidrofluorocarbonos o compuestos hidrogenofluorcarbonados (miles de toneladas de CO2 equivalente)',]$total = df_units[df_units$sustancia == 'HFC - Hidrofluorocarbonos o compuestos hidrogenofluorcarbonados (miles de toneladas de CO2 equivalente)',]$total * 1000
+df_units[df_units$sustancia == 'SF6 - Hexafluoruro de azufre (miles de toneladas de CO2 equivalente)',]$total = df_units[df_units$sustancia == 'SF6 - Hexafluoruro de azufre (miles de toneladas de CO2 equivalente)',]$total * 1000
+
+df_units$sustancia = gsub("miles de ","",as.character(df_units$sustancia))
+```
+
+# ¿Qué sustancias contaminantes hay y cómo se distribuyen?
+Dado que hay actividades que engloban otras elimino estas últimas para hacer un análisis correcto.
+```{r fig.width=9, message=FALSE, warning=FALSE, paged.print=FALSE}
+df2 <- df[!df$actividad == 'TOTAL SUSTANCIA CONTAMINANTE' & !df$actividad == 'Total ramas de actividad',]
+df2$sustancia <- sub("\\-.*", "", df2$sustancia)
+
+ggplot(df2, aes(x = total)) +   
+  geom_histogram(bins=30) + 
+  facet_wrap(~ sustancia, scales = "free") + 
+  labs(title = "Histogramas de las sustancias contaminantes",
+       caption = "Fuente: INE") +
+  theme_a() +
+  theme(axis.title.y=element_blank(),
+         axis.title.x=element_blank(),
+         panel.grid.major.y = element_blank(),
+         panel.grid.major.x = element_line(colour = "gray")) 
+```
+El Dióxido de Carbono (CO2) suele contaminar menos de 2 miles de toneladas y es la sustancia que más contamina.
+Le siguen los Hidrofluorocarbonos (HFC) que suelen contaminar unas 100 miles de toneladas, los Óxidos de nitrógeno (NOx) suelen contaminar menos de 4000 toneladas, el Monóxido de carbono (CO) suele contaminar menos de 3000 toneladas y el Metano (CH4) suele contaminar menos de 1000 toneladas.
+
+Entre las sustancias que contaminan menos de 600 toneladas son el Óxidos de azufre (SOx) y las partículas PM2.5 y PM10.
+
+Entre las sustancias menos contaminantes se encuentra elÓxido nitroso (N20), el Hexafluoruro de azufre (SF6), los Perfluorocarbonos (PFC) o el Amoniaco (NH3) con menos de 50 toneladas.
+
+# ¿Cuáles son las actividades que más contaminan de media?
+```{r fig.width=9}
+df3 <- df_units %>% group_by(actividad) %>% summarise(media = median(total), .groups = 'drop')
+df3 <- df3[!df3$actividad == 'TOTAL SUSTANCIA CONTAMINANTE' & !df3$actividad == 'Total ramas de actividad',]
+df3$actividad <- gsub(".*: ","", df3$actividad)
+ treemap(df3,
+         index= "actividad",
+         vSize="media",
+         type="index",
+         fontsize.labels = c(10),
+         fontface.labels = c(1),
+         inflate.labels=F,
+         title = "Contaminación por actividad"
+            )
+```
+La Agricultura, ganadería y caza es la actividad que más contamina, casi un 40% del total de emisiones.
+Le siguen los hogares que contaminan casi el 30% del total de las emisiones.
+En tercer lugar están las actividades de la metalurgia, fabricación de productos de hierro y acero.
+En cuarto lugar el suministro d energía eléctrica, gas, vapor y aire acondicionado.
+
+# Evolución del total de las sustancias contaminantes en miles cada año
+```{r fig.width=9, fig.height=6}
+ggplot(data = df_units[df_units$actividad == 'TOTAL SUSTANCIA CONTAMINANTE',], aes(x = año, y = reorder(sub("\\-.*", "", sustancia),(total)), fill=total/1000)) +
+  geom_tile()+
+  geom_text(aes(label = round(total/1000,1)), color="white",
+          size =3,  hjust=.5, vjust=.5 ) +
+  scale_fill_gradient(low = "steelblue", high = "red4")+
+  labs(x = "Año", fill = "Cantidad de sustancias \ncontaminantes en miles",
+       title = "Evolución de las sustancias contaminantes en miles",
+       caption = "Fuente: INE") + 
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%y",
+               expand =  c(0,0),
+               sec.axis = dup_axis()) +
+  theme_a() +
+  theme (axis.title.y=element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+CO2 es, con diferencia, la sustancia más contaminante. Sin embargo, tiene una tendencia decreciente a lo largo de los años.
+HCF, pese a ser la segunda sustancia más contaminante, ha conseguido decrecer a una tercera parte.
+Mientras CO, COVNM, NH3, SF6, N20 y CH4 se han mantenido a lo largo de los años.
+No se observa ningún incremento relevante en ninguna sustancia contaminante a lo largo de los años.
+
+# ¿Cómo se comporta CO2 en cada actividad?
+```{r fig.width=9, fig.height=6, message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot() +
+  geom_step(data = df_units[!df_units$actividad == 'TOTAL SUSTANCIA CONTAMINANTE' & !df_units$actividad == 'Total ramas de actividad' & df_units$sustancia == 'CO2 - Dióxido de carbono (toneladas)',] , aes(x = año, y = total/1000, color = actividad)) +
+  labs(x = "Años", y = "Toneladas de C02",
+       title = "Evolución del CO2 en miles de Toneladas por industria",
+       caption = "Fuente: INE") +
+  guides(color = FALSE) +
+  scale_color_viridis (option = 'plasma', discrete =TRUE,
+                       direction =-1,
+                       begin=0.2, end=0.8) + # Paleta contínua, uso discreto
+  scale_x_date (limits=c (min(df$año, na.rm = TRUE)-365, max(df$año, na.rm = TRUE)+365),
+                breaks = "5 years",
+                labels = date_format("%Y")) +  # Alargamos el eje x
+  facet_wrap(~ sub("\\:.*", "", actividad)) +
+  theme_a()
+```
+Se observa como los hogares (h) y el suministro de energía eléctrica, gas, vapor y aire acondicionado (35) son las actividades que más toneladas de CO2 emiten.
+Les siguen el transporte terrestre (49) y por tubería y la fabricación de otros productos minerales no metálicos (23).
+
+# ¿Cómo se comportan el resto de sustancias contaminantes en el suministro de energía eléctrica, gas, vapor y aire acondicionado?
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+sumi = df[df$actividad == "35: Suministro de energía eléctrica, gas, vapor y aire acondicionado" & !df$año == as.Date("2020-03-18") & !df$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)' ,]
+ggplot() +
+  geom_line(data = sumi, aes(x = año, y = total, color = sustancia)) +
+  labs(x = "Año", y = "Cantidad de sustancias contaminantes en miles de Toneladas",
+       title = "Evolución de las sustancias contaminantes en miles de Toneladas \nen el suministro de energía eléctrica, gas, vapor y aire acondicionado",
+       caption = "Fuente: INE") +
+  geom_text_repel(data = sumi %>% 
+                  top_n(1, año),
+                  aes(x = año, y = total, color = sustancia,
+                  label = paste0(sub("\\-.*", "", sustancia))), 
+                  size =3,
+                  nudge_x = 700, # Ajuste eje x
+                  nudge_y = 500,
+                  direction="y",
+                  max.overlaps=20,
+                  segment.size = 0.1,
+                  segment.linetype = 1
+                  ) + # Ajuste eje y
+
+  guides(color = FALSE) +
+  scale_color_brewer (palette ='Set1') + # Paleta divergente
+
+  scale_x_date (limits=c (min(df$año, na.rm = TRUE)-365, max(df$año, na.rm = TRUE)+365),
+                labels = date_format("%Y")) +  # Alargamos el eje x
+  theme_a() 
+```
+Los Óxidos de nitrógeno (NOx) son los más contaminantes aun habiendo descendido a lo largo de los años.
+Son seguidos, ya con mucha diferencia, por el Monóxido de carbono (CO) que es la sustancia con mayor crecimiento a lo largo de los años.
+Los Perfluorocarbonos (PFC) y los Hidrofluorocarbonos (HFC) son las sustancias que menos contaminan en el suministro de energía eléctrica, gas, vapor y aire acondicionado.
+
+# ¿Cómo ha variado la cantidad de sustancias contaminantes en 2008 respecto a 2020 en el suministro de energía eléctrica, gas, vapor y aire acondicionado?
+```{r}
+sumi_var <- df[df$actividad == "35: Suministro de energía eléctrica, gas, vapor y aire acondicionado" & !df_units$año == as.Date("2020-03-18"),] %>%
+      pivot_wider (names_from = año,values_from = total) 
+sumi_var$sustancia <- sub("\\-.*", "", sumi_var$sustancia)
+sumi_var$sustancia[sumi_var$sustancia == "CO2 "] <- "CO2 en miles"
+sumi_var$sustancia[sumi_var$sustancia == "PFC "] <- "PFC en miles"
+sumi_var$sustancia[sumi_var$sustancia == "HFC "] <- "HFC en miles"
+
+below <- c(243400.0, 16519.6)
+sumi_var <- sumi_var %>% dplyr::mutate(label_above = ifelse(`2008-03-18` %in% below, "", `2008-03-18`),
+                           label_below = ifelse(`2008-03-18` %in% below, `2008-03-18`, ""))
+sumi_var$label_below <- as.numeric(as.character(sumi_var$label_below))
+sumi_var$label_above <- as.numeric(as.character(sumi_var$label_above))
+
+below2 <- c(8584.6, 224900.0)
+sumi_var <- sumi_var %>% dplyr::mutate(label_above2 = ifelse(`2019-03-18` %in% below2, "", `2019-03-18`),
+                           label_below2 = ifelse(`2019-03-18` %in% below2, `2019-03-18`, ""))
+sumi_var$label_below2 <- as.numeric(as.character(sumi_var$label_below2))
+sumi_var$label_above2 <- as.numeric(as.character(sumi_var$label_above2))
+```
+
+```{r  fig.width=9, fig.height=8, message=FALSE, warning=FALSE, paged.print=FALSE}
+mi_paleta <- brewer.pal(8,"Blues") # Paleta secuencial
+cols <- c("2008"= mi_paleta [8],"2019"= mi_paleta [5])
+
+ggplot(sumi_var, aes(y=reorder(sustancia,`2019-03-18`))) + 
+  geom_segment(aes(x=`2008-03-18`, 
+                 xend=`2019-03-18`, 
+                 y=reorder(sustancia,`2019-03-18`), 
+                 yend=sustancia),
+                 color="#b2b2b2", size=2)+
+  geom_point(aes(x=`2008-03-18`, 
+               color = '2008'),
+               size=5)+ 
+  geom_point(aes(x=`2019-03-18`, 
+               color = "2019"), 
+               size=5)+ 
+  geom_text(aes(x = `label_above`, 
+              label = paste0(round(`2008-03-18`/1000,1))),
+              size = 4,
+              hjust= 1.5,
+              vjust=0, show.legend = FALSE ) +
+              
+  geom_text(aes(x = `label_below`, 
+              label = paste0(round(`2008-03-18`/1000,1))),
+              size = 4,
+              hjust= -0.5,
+              vjust=0, show.legend = FALSE ) +
+  
+    geom_text(aes(x = `label_above2`, 
+              label = paste0(round(`2019-03-18`/1000,1))),
+              size = 4,
+              hjust= -0.75,
+              vjust=0, show.legend = FALSE ) +
+              
+  geom_text(aes(x = `label_below2`, 
+              label = paste0(round(`2019-03-18`/1000,1))),
+              size = 4,
+              hjust= 1.5,
+              vjust=0, show.legend = FALSE ) +
+  
+  labs(title = "Variación de las sustancias contaminantes en el \nsuministro de energía eléctrica, gas, vapor y aire acondicionado \nen 2008 y 2019",
+     caption = "Fuente: INE")+
+  scale_x_continuous (sec.axis = dup_axis()) +
+  scale_color_manual(name = "", values = cols )+
+  theme_a() +
+  theme(legend.position="top",
+         axis.title.y=element_blank(),
+         axis.title.x=element_blank(),
+         panel.grid.major.y = element_blank(),
+         panel.grid.major.x = element_line(colour = "gray")) 
+```
+Pese a seguir habiendo una diferencia muy notable entre las cantidades de CO2 y el resto de sustancias contaminantes es llamativo el descenso de más de la mitad de CO2 en 2019, así como el descenso de Óxidos de nitrógeno (NOx) y Óxidos de azufre (SOx).
+
+# ¿Será la diferencia de C02, entre 2008 y 2019, tan grande en el resto de actividades?
+```{r}
+co2_act<-df[df$año %in% as.Date(c('2019-03-18','2008-03-18')) & !df$actividad == 'TOTAL SUSTANCIA CONTAMINANTE' & !df$actividad == 'Total ramas de actividad' & df$sustancia == 'CO2 - Dióxido de carbono (miles de toneladas)',]
+co2_act$total <- co2_act$total
+co2_act$actividad <- sub("\\:.*", "", co2_act$actividad)
+co2_act <- co2_act %>%
+      pivot_wider (names_from = año,values_from = total) 
+
+co2_act <-co2_act %>% 
+       mutate (diff = `2019-03-18` - `2008-03-18`) %>%
+       mutate (ajuste_color = ifelse(diff >0, "Incremento", "Descenso"),
+               ajuste_text = ifelse(diff >0, -0.2,1.2),
+               ajuste_num = ifelse(diff > 0, 1.2,-0.2))
+
+co2_act <- select(co2_act, 'actividad', '2008-03-18', '2019-03-18') %>% 
+       mutate (diff = `2019-03-18` - `2008-03-18`) %>%
+       mutate (ajuste_color = ifelse(diff >0, "Incremento", "Descenso"),
+               text_valor = ifelse(diff >0, paste(round(`2019-03-18`,1),"M :",actividad),
+                                            paste(actividad,": ",round(`2019-03-18`,1),"M")), 
+               ajuste_text = ifelse(diff >0, -0.2,1.2),
+               ajuste_num = ifelse(diff > 0, 1.2,-0.2))
+```
+
+```{r fig.width=9, fig.height=14, message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data = co2_act) +        
+  geom_segment(aes(x = `2008-03-18`, 
+                 xend = `2019-03-18`, 
+                 y = reorder(actividad,`2019-03-18`),
+                 yend = actividad,
+                 color = ajuste_color),
+                 size=1,
+                 arrow = arrow(length = unit(0.20,"cm"),
+                               ends = "last",
+                               type = "closed")) +
+  geom_text(aes(x=`2008-03-18`, 
+                y = reorder(actividad,`2019-03-18`), 
+                color = ajuste_color, 
+                label = paste(round(diff,1),"M"),
+                hjust = 0),
+                size = 4, vjust = -1, show.legend = FALSE) +
+  geom_text(aes(x=`2019-03-18`, 
+                y= reorder(actividad,`2019-03-18`),
+                color = ajuste_color,
+                label = text_valor, 
+                hjust = ajuste_text),
+                size=4, vjust = 0, show.legend = FALSE) +
+  labs(title = "Variación de C02 en miles por actividad 2008-2019",
+                caption = "Fuente: INE")+
+  scale_colour_manual('', values = c('Descenso'='steelblue4', 'Incremento'='red4')) +
+  scale_x_continuous (expand =  c(0.09,0),
+                      sec.axis = dup_axis()) +
+  scale_y_discrete (expand =  c(0.09,0) ) +
+  theme_a() +
+  theme (legend.position = "top",
+         axis.title.y = element_blank(),
+         axis.text.y = element_blank(),
+         axis.title.x = element_blank(),
+         axis.ticks.y = element_blank(),
+         panel.grid.major.y = element_blank(),
+         panel.grid.major.x = element_line(colour = "gray"),
+         plot.margin = margin(1, 1, 1,1, "cm"))
+```
+El suministro de energía eléctrica, gas, vapor y aire acondicionado (35) es, con diferencia, la actividad que más ha variado su contaminación de C02 comparando el año 2008 y 2019, reduciéndose en casi 5 Millones. Le siguen la fabricación de otros productos minerales no metálicos (23) y los hogares (h) con descensos en CO2 de más de 800.000.
+
+El transporte terrestre y por tubería (49) y las industrias de papel (17), alimentación, fabricación de bebidas, tabaco (10-12), extractivas (05-09), metalurgia, transporte aéreo (51), administración pública (84) y agricultura, ganadería y caza (01) tienen una diferencia de contaminación de C02 de más de 100000 en términos absolutos.
+
+# En 2019, ¿Cuánto contaminaron el resto de sustancias en las actividades que tuvieron más incremento de CO2 respecto de 2008?
+Estas actividades son las Industrias de la alimentación, fabricación de bebidas e industria del tabaco (10-12) y el Transporte aéreo (51).
+```{r}
+co2_sustancias <- df_units[df_units$año %in% as.Date(c('2019-03-18','2008-03-18')) & df_units$actividad %in% c("10-12: Industrias de la alimentación, fabricación de bebidas e industria del tabaco","51: Transporte aéreo" ),] 
+co2_sustancias <- co2_sustancias %>% pivot_wider (names_from = año,values_from = total)
+
+co2_sustancias[co2_sustancias == 0] <- 0.00001
+
+co2_sustancias <- co2_sustancias %>% mutate (per = round((abs(`2019-03-18` - `2008-03-18`)/ `2008-03-18` * 100 ),1))
+
+co2_sustancias <-co2_sustancias %>% mutate(total = ifelse(actividad == "10-12: Industrias de la alimentación, fabricación de bebidas e industria del tabaco", per*(-1), per))
+co2_sustancias[co2_sustancias == 999999900.0] <- 100
+co2_sustancias[co2_sustancias == -700.0] <- -100
+co2_sustancias[co2_sustancias == -109.6] <- -100
+co2_sustancias$values <- c("+100","14","2.5","5.8","9","12","+100","100","73.1","22.7","0","0","30.3","12","34.2","12","51.3","19.2","11.6","12.7","29.2","61.2","38.2","25.9","15.7","12.3")
+```
+
+```{r fig.width=9, fig.height=5}
+color_act <- c(`10-12: Industrias de la alimentación, fabricación de bebidas e industria del tabaco` = mi_paleta [8],`51: Transporte aéreo` = mi_paleta [5]) 
+
+ggplot(co2_sustancias, aes(x = reorder(sub("\\-.*", "", sustancia),desc(values)) , y = total, fill=actividad )) + 
+  geom_col(position = "stack", width = 0.6, alpha = 0.8, show.legend = FALSE) + 
+  geom_text(aes(label=paste0(values)),
+            position=position_stack(vjust = 0.5),
+            size=3,
+            color="white")+
+  labs(title = paste("Porcentaje de variación de sustancias en 2008 y 2019 \nen las actividades de alimentación y transporte aéreo respectivamente"),
+       caption = "Fuente: INE")+
+  scale_y_continuous (breaks=c(-100, -50, -25,0,25,50,100),
+                   labels=c("100%","50%","25%","0","25%","50%","100%"))+
+  scale_fill_manual(values = color_act)+
+  coord_flip() + 
+  theme_a() +
+  theme (axis.title.y=element_blank(),
+         axis.title.x=element_blank()) 
+```
+En las actividades de alimentación (celdas en azul oscuro), además del CO2, PFC supera con los mayores porcentajes de incremento de 2019 respecto a 2008.
+Además, PFC también supera con el mayor porcentaje de incremento de 2019 respecto a 2008 en el transporte aéreo (celdas en azul claro).
+
+Al haber cierta similitud en la variación de contaminación en estas actividades en CO2 y PFC,
+# ¿Será  similar la evolución de estas dos sustancias en las respectivas actividades?
+```{r}
+ggplot( ) +
+   geom_line( data= df_units[df_units$actividad == "10-12: Industrias de la alimentación, fabricación de bebidas e industria del tabaco" & df_units$sustancia == 'CO2 - Dióxido de carbono (toneladas)',], 
+              aes(x = año, y=total , color = "CO2")) +
+   geom_line( data = df_units[df_units$actividad == "10-12: Industrias de la alimentación, fabricación de bebidas e industria del tabaco" & df_units$sustancia == "PFC - Perfluorocarbonos o compuestos polifluorcarbonados (toneladas de CO2 equivalente)" ,],
+              aes(x = año, y=total*2500, color = "PFC")) + 
+
+   labs(title = "Evolución del C02 VS PFC en las industrias de la alimentación y tabaco",
+        x = "Año",
+        caption = "Fuente: INE") +
+   scale_y_continuous(name = "C02",
+                         sec.axis = sec_axis(~./2500, name="PFC")) + # Divide by 25 
+   scale_colour_manual('', values = c('PFC'='steelblue4', 'CO2'='red4')) +
+   theme_a() +
+   theme( legend.position = "top",
+          axis.title.y = element_text(color = "red4", size = 14),
+          axis.title.y.right = element_text(color = "steelblue4", size = 14),
+          axis.text.y = element_text(color = "red4"),
+          axis.text.y.right = element_text(color = "steelblue4")
+          )
+```
+Ambas sustancias, los Perfluorocarbonos (PFC) y el Dióxido de  carbono (C02), tienen una tendencia al alza a lo largo de los años. Sin embargo, sus caídas no suelen coincidir.
+
+```{r}
+ggplot( ) +
+   geom_line( data= df_units[df_units$actividad == "51: Transporte aéreo" & df_units$sustancia == 'CO2 - Dióxido de carbono (toneladas)',], 
+              aes(x = año, y=total , color = "CO2")) +
+   geom_line( data = df_units[df_units$actividad == "51: Transporte aéreo" & df_units$sustancia == "PFC - Perfluorocarbonos o compuestos polifluorcarbonados (toneladas de CO2 equivalente)" ,],
+              aes(x = año, y=total*25000, color = "PFC")) + 
+
+   labs(title = "Evolución del C02 VS PFC en el transporte aéreo",
+        x = "Año",
+        caption = "Fuente: INE")+
+   scale_y_continuous(name = "C02",
+                         sec.axis = sec_axis(~./25000, name="PFC")) + # Divide by 25 
+   scale_colour_manual('', values = c('PFC'='steelblue4', 'CO2'='red4')) +
+   theme_a() +
+   theme( legend.position = "top",
+          axis.title.y = element_text(color = "red4", size = 14),
+          axis.title.y.right = element_text(color = "steelblue4", size = 14),
+          axis.text.y = element_text(color = "red4"),
+          axis.text.y.right = element_text(color = "steelblue4")
+          )
+```
+Ambas sustancias, los Perfluorocarbonos (PFC) y el Dióxido de  carbono (C02), tienen un picoo en 2019. Sin embargo,las tendencias no coinciden ya que los PFC son más establles..
+
+# Comparación de la contaminación de sustancias en los últimos 5 años VS años anteriores
+```{r fig.width=9, fig.height=6,message=FALSE, warning=FALSE, paged.print=FALSE}
+color_act <- c(new= mi_paleta [8],old = mi_paleta [5]) 
+
+new_old <- df[!df$actividad == 'TOTAL SUSTANCIA CONTAMINANTE' & !df$actividad == 'Total ramas de actividad',]
+new_old$periodo <- ifelse(new_old$año <  as.Date("2015-03-17"), "old", "new")
+new_old <- new_old %>% group_by(sustancia, periodo) %>% summarise(media = mean(total)/ 1000, .groups = 'drop') 
+new_old$sustancia <- sub("\\-.*", "", new_old$sustancia)
+new_old$sustancia[new_old$sustancia == "CO2 "] <- "CO2 en miles"
+new_old$sustancia[new_old$sustancia == "PFC "] <- "PFC en miles"
+new_old$sustancia[new_old$sustancia == "HFC "] <- "HFC en miles"
+
+ggplot(data = new_old, aes(x=reorder(sustancia,media), y=media,fill= periodo)) + 
+  geom_col ( position = position_dodge()) +
+  geom_text(aes(label = paste0(round(media,1),"mil"), 
+                y= media), 
+            position = position_dodge(width = 1), #hay que indicarle cuantas subbarras hay
+            size = 3,
+            hjust = -0.4) +
+  labs(title = "Comparación de la contaminación de sustancias en los últimos 5 años VS años anteriores",
+       caption = "Fuente: INE")+
+
+  scale_fill_manual('',values = color_act)+
+  coord_flip() +  # Giramos la gráfica pero el eje X e Y vo cambia
+  theme_a() +
+  theme (legend.position="top",
+       axis.title.y=element_blank(),
+       axis.title.x=element_blank(),
+       panel.grid.major=element_blank(),
+       panel.grid.minor=element_blank()) 
+```
+Analizando los periodos de los últimos 5 años y los años anteriores se observa como no hay gran diferencia de emisiones en ninguna sustancia. La sustancia que tiene mayor diferencia de cantidades son los Óxidos de nitrógeno (NOx) con 2900 emisiones más en los años anteriores que en los últimos cinco años, seguido de los Óxidos de azufre (SOx) con 3100 emisiones más en los años anteriores.
+Los años anteriores tienen más cantidad de sustancias contaminantes que en los últimos cinco años excepto para el Amoniaco (NH3) que supera las emisiones en los últimos cinco años.
