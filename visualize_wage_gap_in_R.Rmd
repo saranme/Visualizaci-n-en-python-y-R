@@ -1,0 +1,592 @@
+---
+title: "Practica R"
+output:
+  html_document:
+  df_print: paged
+toc: yes
+html_notebook:
+  number_sections: yes
+---
+# Actividad de visualización en R  
+
+- Datos de Salarios medios -> buscando desigualdades
+
+
+## Datos de Salarios medios por ocupación
+
+fuente: https://ine.es/jaxiT3/files/t/es/csv_bdsc/10916.csv?nocab=
+  
+(datos para las gráficas) 
+
+Datos:
+  
+- Grupo de ocupación
+- Sexo/Brecha de género
+- Periodo (años)
+- Total
+
+Hay algunas filas con datos erróneos, os paso el código para corregirlo
+Hay valores negativos en los salarios, hay que ponerlos en positivo
+
+El grupo de ocupación tiene los nombres muy largos, están ordenados de más a menos cualificación Os pongo el código para simplificar nombres
+
+- "A Directores y gerentes"                                                                                     
+- "B Técnicos y profesionales científicos e intelectuales de la salud y la enseñanza"                           
+- "C Otros técnicos y profesionales científicos e intelectuales"                                                
+- "D Técnicos, profesionales de apoyo"                                                                          
+- "E Empleados de oficina que no atienden al público"                                                           
+- "F Empleados de oficina que atienden al público"                                                              
+- "G Trabajadores de los servicios de restauración y comercio"                                                  
+- "H Trabajadores de los servicios de salud y el cuidado de personas"                                           
+- "I Trabajadores de los servicios de protección y seguridad"                                                   
+-  "J Trabajadores cualificados en el sector agrícola, ganadero, forestal y pesquero"                            
+-  "K Trabajadores cualificados de la construcción, excepto operadores de máquinas"                              
+-  "L Trabajadores cualificados de las industrias manufactureras, excepto operadores de instalaciones y máquinas"
+-  "M Operadores de instalaciones y maquinaria fijas, y montadores"                                              
+-  "N Conductores y operadores de maquinaria móvil"                                                              
+-  "O Trabajadores no cualificados en servicios (excepto transportes)"                                           
+-  "P Peones de la agricultura, pesca, construcción, industrias manufactureras y transportes"                    
+-  "Total" 
+
+
+## Salarios medios por autonomía 
+
+(Datos para el mapa)
+
+fuente: https://www.ine.es/jaxiT3/files/t/es/csv_bdsc/13930.csv?nocab=1
+
+Datos  
+- Tipo de jornada
+- Decil
+- Comunidades y Ciudades Autónomas
+- Periodo (en años)
+- Total
+
+```{r message=FALSE, warning=FALSE}
+
+if (!"gghighlight" %in% installed.packages()) {install.packages("gghighlight")} # Para resaltar líneas
+if (!"viridis" %in% installed.packages()) {install.packages('viridis')}     # Paleta colores
+if (!"ggthemes" %in% installed.packages()) {install.packages('ggthemes')}    # Temas
+if (!"mapSpain" %in% installed.packages()) {install.packages('mapSpain')}    # Mapas de España
+if (!"tmap" %in% installed.packages()) {install.packages('tmap') }       # Dibujar mapas
+if (!"cartography" %in% installed.packages()) {install.packages('cartography')} # Dibujar mapas
+if (!"cartography" %in% installed.packages()) {install.packages('cartography')} # Dibujar mapas
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# Librerías que podéis necesitar
+library(tidyverse)
+library(lubridate)   # Manejo de fechas
+library(scales)      # Fomatar fechas
+library(gghighlight) # Para resaltar líneas
+library(viridis)     # Paleta colores
+library(ggthemes)    # Temas
+library(sf)          # Manejo objetos sf
+library(mapSpain)    # Mapas de España
+library(tmap)        # Dibujar mapas
+library(cartography) # Dibujar mapas
+```
+
+### Plantilla de gráficas 
+```{r}
+
+theme_a <- function(base_size = 9,
+                    base_family = "sans"
+                           )
+    {
+ 
+    tema <-
+        theme_bw(base_size=base_size) +
+          
+        theme(legend.position="right") +
+        theme(legend.text = element_text(size=base_size+2,family = base_family)) +
+        theme(plot.title=element_text(size=base_size+4, 
+                                      vjust=1.25, 
+                                      family=base_family, 
+                                      hjust = 0.5
+                                      )) +
+        
+        theme(plot.subtitle=element_text(size=base_size+2, family = base_family,  hjust = 0.5))  +
+        theme(text = element_text(size=base_size+2,family = base_family)) +
+        theme(axis.text.x=element_text(size=base_size+2,family = base_family)) +
+        theme(axis.text.y=element_text(size=base_size+2, family = base_family)) +
+          
+        theme(axis.title.x=element_text(size=base_size+2, vjust=0, family = base_family)) +
+        theme(axis.title.y=element_text(size=base_size+2, vjust=1.25, family = base_family)) +
+        theme(plot.caption=element_text(size=base_size-1, family = base_family)) +
+        theme(strip.text = element_text(size=base_size+1, family = base_family)) +
+        theme(strip.text.x = element_text(size=base_size+1, family = base_family)) +
+        theme(strip.text.y = element_text(size=base_size+1, family = base_family)) 
+ 
+    return (tema)
+}
+```
+
+### Corregir datos erróneos
+```{r}
+locale(date_names = "es", date_format = "%AD", time_format = "%AT",
+  decimal_mark = ",", grouping_mark = ".", tz = "UTC",
+  encoding = "UTF-8", asciify = FALSE)
+
+salarios_ocup <- read_csv2 ("https://ine.es/jaxiT3/files/t/es/csv_bdsc/10916.csv?nocab=")
+```
+
+
+Hay 27 filas erróneas. Las buscamos en el fichero y vemos que hay un grupo de ocupación que separa el texto con ; y el parser lo interpreta como un separador. Lo corregimos así
+- Descargamos el fichero
+- Cambiamos el ; por ,
+- Leemos el fichero corregido
+
+```{r}
+# download tmp.csv file next to this notebook
+download.file("https://ine.es/jaxiT3/files/t/es/csv_bdsc/10916.csv?nocab=", "tmp.csv")
+# reads the text
+tx <- readLines("tmp.csv")
+# replace text
+tx <- gsub("; profesionales de apoyo",", profesionales de apoyo", tx)
+# create file with text tx
+writeLines(tx, "newtmp.csv")
+
+salarios_ocup <- read_csv2 ("newtmp.csv",
+                            na = "..",
+                            col_names = TRUE,
+                            cols(`Grupos de ocupación` = col_character(), 
+                                `Sexo/Brecha de género` = col_character(),
+                                 Periodo = col_date(format('%Y')),
+                                 Total = col_number  ()))
+
+names(salarios_ocup)
+print (unique(sort(salarios_ocup$`Grupos de ocupación`)))
+```
+
+### Preparar datos
+
+- En algunas filas el valor de Total es negativo (debe ser un error) hacer que todos los valores de esa columna sean positivos usando la función abs()
+- Se ensancha la tabla en la columna Sexo/Brecha de género para facilitar los cálculos
+- Se calculará la diferencia de salarios entre hombres y mujeres en unidades de 1000 euros (pista: tendréis que ensanchar la tabla)
+- Se calculará la brecha de salarial 100 - columna `Cociente mujeres respecto a hombres` (porcentaje del salario de la mujer respecto del hombre  calculado como salario mujer * 100/ Salario del hombre) 
+- Se simplificarán los nombres de los grupos de ocupación por ser muy largos
+  - Separar el código, el texto. Una ayudita, extract( `Grupos de ocupación`, c("code","ocup"), "([[:alnum:]]+)([ [:alnum:]]*)")
+  - Se simplificará el nombre. Una ayudita del cómo hacer un dataframe en el código con otros nombres. Podéis hacer un join de los datos de los salarios_ocup con este dataframe y tendréis los nombres simplificados accesibles 
+  - Eliminar el grupo de ocupación "J" que tiene valores imcompletos
+  
+```{r}
+
+salarios_diff <- salarios_ocup %>%
+                mutate(Total = abs(Total)) %>% # Quitamos valores negtivos
+                pivot_wider (names_from = `Sexo/Brecha de género`, values_from = Total ) %>% # ensanchamos Sexo/Brecha de género
+                mutate (diff = (Hombres - Mujeres)/1000) %>% #calculamos diferencia entre hombres y mujeres
+                mutate (brecha = 100 - `Cociente mujeres respecto a hombres`) %>% #calculamos brecha
+                extract( `Grupos de ocupación`, c("code","ocup"), "([[:alnum:]]+)([ [:alnum:]]*)") %>% #separamos código de ocupación
+                filter (code != "J") #filtramos grupo J
+
+
+code <- c("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Total")
+ocup_simple <- c( "Directores y gerentes",
+                  "Científicos, salud y la enseñanza",
+                  "Otros profesionales científicos",
+                  "Profesionales de apoyo",
+                  "Administrativos",
+                  "Atención al público",
+                  "Servicios de restauración y comercio",
+                  "Servicios de salud y cuidados",
+                  "Servicios de seguridad",
+                  "Cualificados sector agrario",
+                  "Cualificados sector construcción",
+                  "Cualificados sector industrial",
+                  "Operadores de instaladores",
+                  "Conductores y maquinistas",
+                  "No cualificados sector servicios",
+                  "Peones",
+                  "Total")
+ocup_nombre <- tibble(code ,
+                      ocup_simple)
+
+
+#se quita la columna ocup y se hace un left join con ocup_nombre
+salarios_diff <- salarios_diff %>%
+                     select(-ocup) %>%
+                     left_join(ocup_nombre, by = "code")
+
+
+salarios_diff <- salarios_diff[, c(1, 8, 2, 3, 4, 5, 6, 7)] #Cambiamos el orden de las columnas
+
+print(salarios_diff)
+
+```
+  
+
+  
+
+### Evolución de la brecha Salarial de la mujer respecto del hombre por grupo de ocupación
+
+- Utilizaremos el dato que hemos calculado de la brecha laboral
+
+
+#### heatmap
+
+- Poner en qué unidades están los datos
+- Ordenados de valor más alto a más bajo respecto al valor más reciente de la brecha salarial
+- Color rojo-azul. Los valores más altos en rojo, y los los más bajos en azul
+- El titulo de la leyenda debe ser "Brecha\nSalarial"
+
+```{r fig.width=9, fig.height=6}
+max_fecha = max(salarios_diff$Periodo)
+df_order <- salarios_diff %>% 
+            filter (Periodo == max_fecha) %>%
+            arrange (brecha) 
+orden_ocup <- unique(df_order$ocup_simple)
+
+df <- filter(salarios_diff, code != "Total")
+
+df$ocup_simple <- factor(df$ocup_simple,levels=orden_ocup)
+
+# Heatmap
+ggplot(data = df, aes(x = Periodo, y = ocup_simple, fill=brecha)) +
+  geom_tile()+
+  geom_text(aes(label = round(brecha,1)), color="white",
+          size =3,  hjust=.5, vjust=.5 ) +
+  scale_fill_gradient(low = "steelblue", high = "red4")+
+  labs(x = "Año", fill = "Porcentaje de la\nBrecha\nSalarial",
+       title = "Evolución del porcentaje de la brecha salarial de la mujer respecto del hombre\n por grupo de ocupación",
+       caption = "Fuente: INE") + 
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%y",
+               expand =  c(0,0),
+               sec.axis = dup_axis()) +
+  theme_a() +
+  theme (axis.title.y=element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+#### Con un line chart
+
+Visualizar mediante un line chart la evolución de los salarios del 2009 al 2019 para cada uno de los grupos de ocupación
+
+- Elegir la opción que más os haya gustado para estos casos
+- Poner en qué unidades están los datos
+- Si usáis facetas, ordenadas por la codificación del INE
+
+```{r fig.width=8, fig.height=6}
+df$ocup_simple <- factor(df$ocup_simple, levels = ocup_nombre$ocup_simple)
+
+ggplot() +
+  geom_step(data = df, aes(x = Periodo, y = brecha, color = ocup_simple)) +
+  geom_line(data = df, aes(x = Periodo, y = brecha), 
+                                      color="grey", size = 1,
+                                      alpha = 0.5) +
+  labs(x = "Año", y = "Brecha Salarial de la mujer respecto del hombre",
+       title = "Evolución del porcentaje de la brecha Salarial de la mujer respecto del hombre por grupo de ocupación",
+       caption = "Fuente: INE") +
+  guides(color = "none") +
+  scale_color_viridis (option = 'plasma', discrete =TRUE,
+                       direction =-1,
+                       begin=0.2, end=0.8) + # Paleta contínua, uso discreto
+  scale_y_continuous (labels=scales::percent_format(scale = 1,accuracy = 1L),
+                      limits=c (0, 50),
+                      breaks = seq(0, 40, by = 20)) + 
+  scale_x_date (limits= c(min(df$Periodo, na.rm = TRUE)-365, max(df$Periodo, na.rm = TRUE)+(365)),
+                breaks = c(min(df$Periodo), max(df$Periodo)),
+                labels = date_format("%Y")) +  # Alargamos el eje x
+  facet_wrap(~ ocup_simple, ncol = 3
+             ) +
+  theme_a()
+```
+
+### Evolución de la diferencia de salarios medios por ocupación entre hombres y mujeres
+
+- Utilizaremos el dato de la diferencia de salarios en miles de euros
+
+#### Con un heatmap
+
+Visualizar mediante un heatmap la evolución de la diferencia salarial en miles de euros del 2009 al 2019 para cada uno de los grupos de ocupación
+
+- Poner en qué unidades están los datos
+- Escala de color azul-rojo. Valores al altos azul, mas bajos rojo
+- El titulo de la leyenda debe ser "Diferencia\nsalarial\nen miles"
+
+```{r fig.width=9, fig.height=6}
+ggplot(data = df, aes(x = Periodo, y = ocup_simple, fill=diff)) +
+  geom_tile()+
+  geom_text(aes(label = round(diff,1)), color="white",
+          size =3,  hjust=.5, vjust=.5 ) +
+  scale_fill_gradient(low = "red4", high = "steelblue")+
+  labs(x = "Año", fill = "Diferencia\nsalarial\nen miles",
+       title = "Evolución de la diferencia de salarios medios, en miles, por ocupación entre hombres y mujeres",
+       caption = "Fuente: INE") + 
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%y",
+               expand =  c(0,0),
+               sec.axis = dup_axis()) +
+  theme_a() +
+  theme (axis.title.y=element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+#### Con un line chart
+
+Visualizar mediante un line chart la evolución de los salarios del 2009 al 2019 para cada uno de los grupos de ocupación
+
+- Elegir la opción que más os haya gustado para estos casos
+- Poner en qué unidades están los datos
+- Si usáis facetas, ordenadas por la codificación del INE
+
+
+```{r fig.width=7, fig.height=6}
+ggplot() +
+  geom_step(data = df, aes(x = Periodo, y = diff, color = ocup_simple)) +
+  geom_line(data = df, aes(x = Periodo, y = diff), 
+                                      color="grey", size = 1,
+                                      alpha = 0.5) +
+  labs(x = "Año", y = "Diferencia salarial en miles",
+       title = "Evolución de la diferencia de salarios medios, en miles, por ocupación entre hombres y mujeres",
+       caption = "Fuente: INE") +
+  guides(color = "none") +
+  scale_color_viridis (option = 'plasma', discrete =TRUE,
+                       direction =-1,
+                       begin=0.2, end=0.8) + # Paleta contínua, uso discreto
+  scale_y_continuous (limits=c (0, 30),
+                      breaks = seq(0, 30, by = 10)) +
+  scale_x_date (limits= c(min(df$Periodo, na.rm = TRUE)-365, max(df$Periodo, na.rm = TRUE)+(365)),
+                breaks = c(min(df$Periodo), max(df$Periodo)),
+                labels = date_format("%Y")) +  # Alargamos el eje x
+  facet_wrap(~ ocup_simple, ncol = 3
+             ) +
+  theme_a()
+```
+
+### Variación de la brecha salarial entre el 2009 y 2019 por grupo de ocupación
+
+- Utilizararemos el dato de brecha salarial
+- Elección libre de gráfica
+
+
+```{r fig.width=7, fig.height=8}
+df3 <- df[,c("ocup_simple","Periodo","brecha")]
+df3 <- filter(df3, Periodo == "2019-01-01" | Periodo == "2009-01-01")
+df3 <- df3 %>% pivot_wider(names_from = Periodo, values_from = brecha)
+df3 <- df3 %>% rename("2019" = "2019-01-01", "2009" = "2009-01-01")
+
+df4 <- df3 %>% mutate(diff = `2019`- `2009`) %>%
+       mutate (ajuste_color = ifelse(diff >0, "Incremento", "Descenso"),
+               ajuste_text = ifelse(diff >0, -0.2,1.2),
+               ajuste_num = ifelse(diff > 0, 1.2,-0.2))
+ggplot(data = df4) +
+        
+  geom_segment(aes(x = `2009`, 
+                 xend = `2019`, 
+                 y = reorder(ocup_simple,`2019`), 
+                 yend = ocup_simple,
+                 color = ajuste_color),
+                 size=1,
+                 arrow = arrow(length = unit(0.20,"cm"),
+                               ends = "last",
+                               type = "closed")) +
+  geom_text(aes(x=`2009`, 
+                y = reorder(ocup_simple,`2019`), 
+                color = ajuste_color, 
+                label = round(diff,1),
+                hjust = 0),
+                size = 4, vjust = -1, show.legend = FALSE) +
+  geom_text(aes(x=`2019`, 
+                y= reorder(ocup_simple,`2019`),
+                color = ajuste_color,
+                label = ocup_simple, 
+                hjust = ajuste_text),
+                size=4, vjust = 0, show.legend = FALSE) +
+  labs(title = "Variación del porcentaje de la brecha salarial entre el 2009 y 2019\npor grupo de ocupación",
+                caption = "Fuente: INE") +
+  scale_colour_manual('', values = c('Descenso'='steelblue4', 'Incremento'='red4')) +
+  scale_x_continuous (limit = c(0,35),
+                      breaks = seq(0, 40, by = 10),
+                      expand =  c(0,0),
+                      sec.axis = dup_axis()) +
+  scale_y_discrete ( expand =  c(0.09,0) ) +
+
+  theme_a() +
+  theme (legend.position = "top",
+         axis.title.y = element_blank(),
+         axis.text.y = element_blank(),
+         axis.title.x = element_blank(),
+         axis.ticks.y = element_blank(),
+         panel.grid.major.y = element_blank(),
+         panel.grid.major.x = element_line(colour = "gray"),
+         plot.margin = margin(1, 1, 1,1, "cm"))
+```
+
+### Distribución de la brecha salarial por grupo de ocupación
+
+- Usar el dato de brecha digital, todos los años y desagregar por grupo de ocupación
+- Elección libre de gráfica
+
+```{r fig.width=7, fig.height=6}
+ggplot(df) + 
+  geom_histogram( aes(x = brecha, group = Periodo),
+                 fill='cornflowerblue',
+                 color = "white",
+                 bins = 30)  +
+  labs(title = "Evolución de la tasa de paro por edad",
+       caption = "Fuente: INE") +
+  scale_x_continuous (labels=scales::percent_format(scale = 1,accuracy = 1L),
+                    #breaks =seq(0, 30, by = 10)) +
+                   breaks =seq(0, max(df$brecha),
+                               by = round(max(df$brecha)/min(df$brecha)+5,-1)))+
+  guides(color = "none")+
+  facet_wrap(~ ocup_simple, ncol=3)+
+  theme_a() +
+  theme (axis.title.y=element_blank(),
+         axis.title.x=element_blank() ) 
+```
+
+### Relación entre brecha salarial vs. diferencia salarial entre hombres y mujeres por grupo de ocupación
+
+- Usaremos los datos de brecha digital y de diferencia de salarios medios entre hombres y mujeres en miles de euros
+
+#### Gráfica line chart de doble eje
+
+- Usar facetas para desagregar por grupos de ocupación
+- Color:
+    - Brecha salarial en rojo
+    - Diferencia salarial en azul
+
+```{r fig.width=9, fig.height=7}
+ggplot( ) +
+   geom_line( data= df, 
+              aes(x = Periodo, y=brecha , color = "Brecha")) +
+   geom_line( data = df,
+              aes(x = Periodo, y=diff*2, color = "Diferencia")) + 
+   labs(title = "Evolución entre el porcentaje de la brecha salarial\nvs.\ndiferencia salarial, en miles, entre hombres y mujeres por grupo de ocupación",
+        x = "Años")+
+   scale_y_continuous(name = "porcentaje de brecha salarial",
+                      labels=scales::percent_format( scale = 1,accuracy = 1L), 
+                         sec.axis = sec_axis(~./2, name="Diferencia salarial en miles")) + # Divide by 2
+   scale_colour_manual('', values = c("Diferencia"='steelblue4', "Brecha"='red4')) +
+   facet_wrap(~ ocup_simple, ncol=3) +
+   theme_a() +
+   theme( legend.position = "top",
+          axis.title.y = element_text(color = "red4", size = 14),
+          axis.title.y.right = element_text(color = "steelblue4", size = 14),
+          axis.text.y = element_text(color = "red4"),
+          axis.text.y.right = element_text(color = "steelblue4")
+          )
+```
+
+### Mapa de salarios medios por autonomías
+
+Fuente de datos: https://www.ine.es/jaxiT3/files/t/es/csv_bdsc/13930.csv?nocab=1
+
+Elegir recursos espaciales 
+
+Recursos espaciales:
+
+- Canarias: https://congosto.github.io/mapas/recintos_autonomicas_inspire_canarias_wgs84.json
+- Peninsula y baleares: https://congosto.github.io/mapas/recintos_autonomicas_inspire_peninbal_etrs89.json
+- Traducción de nombres INE a nombres ISO: https://www.ine.es/jaxiT3/files/t/es/csv_bdsc/13930.csv?nocab=1
+- Librería mapspain
+
+librerías a elegir:
+
+- ggplot
+- tmap
+- Cartography 
+
+#### Recursos de traducción de nombres
+
+```{r}
+
+# recurso de traducción de nombre
+
+url_names_spain_region <- "https://raw.githubusercontent.com/montera34/escovid19data/master/data/original/shapes/spain_regions_utm.csv"
+names_spain_region <- read_csv2(url_names_spain_region)
+print (names_spain_region)
+
+
+
+```
+
+#### Lectura del fichero de datos y ajustes
+
+```{r}
+# lectura del fichero de datos y ajustes
+
+salarios_ccaa <- read_csv2 ("https://www.ine.es/jaxiT3/files/t/es/csv_bdsc/13930.csv?nocab=1",
+                            na = "..")
+ 
+salarios_ccaa <- salarios_ccaa %>% 
+                rename ( ccaa= `Comunidades y Ciudades Autonómas`) # cambiamos de nombre de
+                                                              #variable por comodidad
+salarios_ccaa$ccaa <-  str_replace (salarios_ccaa$ccaa,"[0-9]+ ", "")  # Quitamos el código a de la autonomía
+                  
+
+
+```
+#### Filtramos datos para el mapa
+
+- Seleccionamos la jornada a tiempo completo
+- El Total decil
+- Las comunidades autónomas sin el Total
+- La fecha más actual
+
+```{r}
+# Filtramos datos para tener los valores del los salarios del último año
+salarios_ccaa <- salarios_ccaa %>% 
+                         filter (`Tipo de jornada` == "Jornada a tiempo completo" &
+                         Decil =="Total decil" &
+                         ccaa != "Total Nacional" &
+                         Periodo == max(Periodo)) 
+
+```
+
+
+#### Unión de datos y nombres normalizados
+
+```{r}
+# unión de datos y nombres normalizados
+
+salarios_ccaa_nor <- left_join(names_spain_region,salarios_ccaa, by = c( "INE_name" = "ccaa"))
+print (salarios_ccaa_nor)
+
+
+```
+
+#### Lectura de datos espaciales
+
+
+```{r}
+#Ayuda de lectura de ficheros espaciales
+# elegir el recurso espacial
+# Lectura de ficheros espaciales de la peninsula y Canarias
+peninbal <- "https://congosto.github.io/mapas/recintos_autonomicas_inspire_peninbal_etrs89.json"
+canarias <- "https://congosto.github.io/mapas/recintos_autonomicas_inspire_canarias_wgs84.json"
+map_p_sf <- st_read(peninbal)
+map_c_sf <- st_read(canarias)
+#lectura del mapa de España completo
+mapSpain_sf <- esp_get_ccaa()
+
+```
+
+#### mapa de salarios medios
+
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+map_salarios_ccaa_nor <- left_join (mapSpain_sf, salarios_ccaa_nor , by = c( "ine.ccaa.name" = "INE_name"))
+
+ggplot(data = map_salarios_ccaa_nor) +
+     geom_sf(aes(geometry = geometry,fill = Total), color ="#6C96A6") + 
+     geom_sf_text (aes(label = round(Total,1)),
+                   stat = "sf_coordinates",
+                    size = 3) +
+    labs(title = paste ("Salario medio en 2020"),
+    fill ="Salario medio") +
+
+    scale_fill_gradient (low = "#E1F9FB",high = "#1882AD",
+                        guide = guide_legend()) +
+    theme_map() +
+    theme(plot.title=element_text(size='14',face="bold"),
+          legend.title = element_text(size=11),
+          legend.text = element_text(size=10),
+          strip.text = element_text(size=9),
+          legend.position = "right")
+```
